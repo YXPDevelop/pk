@@ -92,7 +92,7 @@
 <div id="game-container">
   <canvas id="c"></canvas>
   <div id="cheat-panel">
-    <div class="cheat-title">🛠️ 作弊</div>
+    <div class="cheat-title">🛠️ 作弊 | 哎我，玩不起是不是</div>
     <button class="cheat-btn" id="btn-god">🛡️ 无敌</button>
     <button class="cheat-btn" id="btn-superjump">🚀 超级跳</button>
     <button class="cheat-btn" id="btn-slowmo">🐢 慢动作</button>
@@ -123,7 +123,7 @@
     const PENGUIN_SIZE = 44;
     const OBSTACLE_EMOJI_SIZE = 38;
     const OBSTACLE_GAP = 4;
-    const OBSTACLE_EMOJIS = ['🐊','🦖','🪨','🌵','🐍','🦀','🐢','🦂','🪵','🐃'];
+    const OBSTACLE_EMOJIS = ['😎','🤔','😱','😳','😡','😭','🌝','🪵','🌚'];
     const MIN_OBSTACLE_COUNT = 2;
     const MAX_OBSTACLE_COUNT = 5;
     const BLOCK_SIZE = 22;
@@ -226,7 +226,7 @@
 
     function getPenguinEmoji() {
       if (penguinGrounded) return '🐧';
-      return penguinVY < -50 ? '🐦' : '🐧';
+      return penguinVY < -50 ? '🐧' : '🐧';
     }
 
     function rectCollide(ax, ay, aw, ah, bx, by, bw, bh) {
@@ -597,7 +597,7 @@
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 20px "Courier New", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('GAME OVER', mx, my-14);
+        ctx.fillText('真菜', mx, my-14);
         drawEmoji('🏆', mx-44, my+24, 26);
         drawPixelNumber(score, mx+12, my+28, 5, '#ffd700');
         const btnX = mx-70, btnY = my+64, btnW=140, btnH=46;
