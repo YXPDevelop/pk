@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>🐧 8-bit 跑酷 · 作弊模式</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      touch-action: manipulation;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0b0b1a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #game-container {
+      position: relative;
+    }
+    canvas {
+      display: block;
+      max-width: 100vw;
+      max-height: 100vh;
+      image-rendering: crisp-edges;
+      image-rendering: pixelated;
+    }
+    #cheat-panel {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: #1a1a32;
+      border: 2px solid #f0e68c;
+      border-radius: 0px;
+      padding: 10px 12px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 10;
+      width: 150px;
+      pointer-events: auto;
+    }
+    .cheat-title {
+      color: #ffd966;
+      font-family: "Courier New", monospace;
+      font-weight: bold;
+      font-size: 13px;
+      text-align: center;
+      margin-bottom: 2px;
+      letter-spacing: 1px;
+    }
+    .cheat-btn {
+      background: #2a2a4a;
+      color: #fff;
+      border: 2px solid #5a5a8a;
+      border-radius: 0px;
+      padding: 6px 8px;
+      font-family: "Courier New", monospace;
+      font-weight: bold;
+      font-size: 11px;
+      cursor: pointer;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .cheat-btn.active {
+      background: #4a6a4a;
+      border-color: #8aff8a;
+      color: #e0ffe0;
+    }
+    .cheat-btn:active {
+      background: #3a3a6a;
+    }
+    #cheat-close {
+      margin-top: 4px;
+      background: #4a2020;
+      border-color: #aa5555;
+      font-size: 11px;
+      padding: 4px;
+    }
+  </style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="c"></canvas>
+  <div id="cheat-panel">
+    <div class="cheat-title">🛠️ 作弊</div>
+    <button class="cheat-btn" id="btn-god">🛡️ 无敌</button>
+    <button class="cheat-btn" id="btn-superjump">🚀 超级跳</button>
+    <button class="cheat-btn" id="btn-slowmo">🐢 慢动作</button>
+    <button class="cheat-btn" id="btn-infjump">🔄 无限跳</button>
+    <button class="cheat-btn" id="cheat-close">❌ 关闭</button>
+  </div>
+</div>
+
+<script>
+  (function() {
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const cheatPanel = document.getElementById('cheat-panel');
+    const W = 420, H = 680;
+    let scale = 1;
+    const GROUND_RATIO = 0.78;
+    let groundY;
+    let penguinX, penguinY, penguinVY, penguinVX;
+    let penguinGrounded = false;
+    let jumpsRemaining = 2;
+    let gameOver = false, gameStarted = false;
+    let score = 0, gameSpeed = 180;
+    let deathMenuAlpha = 0;
+    let obstacles = [];
+    let clouds = [], mountains = [];
+    let obstacleTimer = 0, nextObstacleDelay = 1.0;
+    let frameCount = 0;
+    const PENGUIN_SIZE = 44;
+    const OBSTACLE_EMOJI_SIZE = 38;
+    const OBSTACLE_GAP = 4;
+    const OBSTACLE_EMOJIS = ['🐊','🦖','🪨','🌵','🐍','🦀','🐢','🦂','🪵','🐃'];
+    const MIN_OBSTACLE_COUNT = 2;
+    const MAX_OBSTACLE_COUNT = 5;
+    const BLOCK_SIZE = 22;
+    const GRAVITY = 1800;
+    const JUMP_VELOCITY = -620;
+    const MIN_GAP = 140;
+    const DEATH_X = 8;
+    const PUSH_SPEED = -280;
+    const JUMP_COOLDOWN = 0.05;
+    let lastJumpTime = -Infinity;
+
+    let cheatGod = false;
+    let cheatSuperJump = false;
+    let cheatSlowMo = false;
+    let cheatInfJump = false;
+
+    let touchStartX = 0, touchStartY = 0;
+    let swipeSequence = [];
+
+    const digitPatterns = {
+      '0': [[1,1,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1]],
+      '1': [[0,0,1,0,0],[0,1,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,1,1,1,0]],
+      '2': [[1,1,1,1,1],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,1]],
+      '3': [[1,1,1,1,1],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,1],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,1]],
+      '4': [[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1],[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1]],
+      '5': [[1,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,1],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,1]],
+      '6': [[1,1,1,1,1],[1,0,0,0,0],[1,0,0,0,0],[1,1,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1]],
+      '7': [[1,1,1,1,1],[0,0,0,0,1],[0,0,0,1,0],[0,0,1,0,0],[0,1,0,0,0],[0,1,0,0,0],[0,1,0,0,0]],
+      '8': [[1,1,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1]],
+      '9': [[1,1,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,1]],
+    };
+
+    function resize() {
+      const maxW = Math.min(window.innerWidth - 12, 420);
+      const maxH = Math.min(window.innerHeight - 12, 680);
+      scale = Math.min(maxW / W, maxH / H);
+      canvas.width = Math.floor(W * scale);
+      canvas.height = Math.floor(H * scale);
+      canvas.style.width = canvas.width + 'px';
+      canvas.style.height = canvas.height + 'px';
+      groundY = Math.floor(H * GROUND_RATIO);
+      if (!gameStarted && !gameOver) {
+        penguinY = groundY - PENGUIN_SIZE/2;
+        penguinX = W/2;
+      }
+    }
+
+    function initGame() {
+      groundY = Math.floor(H * GROUND_RATIO);
+      penguinX = W/2;
+      penguinY = groundY - PENGUIN_SIZE/2;
+      penguinVY = 0;
+      penguinVX = 0;
+      penguinGrounded = true;
+      jumpsRemaining = cheatInfJump ? 999 : 2;
+      obstacles = [];
+      clouds = [];
+      mountains = [];
+      score = 0;
+      gameSpeed = cheatSlowMo ? 80 : 180;
+      gameOver = false;
+      gameStarted = true;
+      deathMenuAlpha = 0;
+      obstacleTimer = 0;
+      nextObstacleDelay = 0.9 + Math.random() * 0.5;
+      frameCount = 0;
+      lastJumpTime = -Infinity;
+      for (let i = 0; i < 6; i++) {
+        clouds.push({ x: Math.random() * W, y: 28 + Math.random() * 150, speed: 40 + Math.random() * 60, size: 24 + Math.random() * 22 });
+      }
+      for (let i = 0; i < 8; i++) {
+        mountains.push({ x: i * 55 + Math.random() * 22, y: groundY - 20 - Math.random() * 14, size: 28 + Math.random() * 24 });
+      }
+    }
+
+    function spawnObstacle() {
+      const emoji = OBSTACLE_EMOJIS[Math.floor(Math.random() * OBSTACLE_EMOJIS.length)];
+      const count = MIN_OBSTACLE_COUNT + Math.floor(Math.random() * (MAX_OBSTACLE_COUNT - MIN_OBSTACLE_COUNT + 1));
+      const totalW = count * OBSTACLE_EMOJI_SIZE + (count - 1) * OBSTACLE_GAP;
+      let startX = W + totalW/2 + 30;
+      if (obstacles.length > 0) {
+        const last = obstacles[obstacles.length-1];
+        const lastRight = last.x + last.width/2;
+        startX = Math.max(startX, lastRight + MIN_GAP + totalW/2);
+      }
+      const oy = groundY - OBSTACLE_EMOJI_SIZE/2 - 2;
+      const lastOffsetX = totalW/2 - OBSTACLE_EMOJI_SIZE/2;
+      obstacles.push({
+        x: startX,
+        y: oy,
+        emoji: emoji,
+        count: count,
+        width: totalW,
+        height: OBSTACLE_EMOJI_SIZE,
+        stepOffsetX: lastOffsetX,
+        stepOffsetY: OBSTACLE_EMOJI_SIZE,
+        passed: false
+      });
+    }
+
+    function getPenguinEmoji() {
+      if (penguinGrounded) return '🐧';
+      return penguinVY < -50 ? '🐦' : '🐧';
+    }
+
+    function rectCollide(ax, ay, aw, ah, bx, by, bw, bh) {
+      return (
+        ax - aw/2 < bx + bw/2 &&
+        ax + aw/2 > bx - bw/2 &&
+        ay - ah/2 < by + bh/2 &&
+        ay + ah/2 > by - bh/2
+      );
+    }
+
+    function update(dt) {
+      if (!gameStarted || gameOver) {
+        if (gameOver && deathMenuAlpha < 1) deathMenuAlpha = Math.min(1, deathMenuAlpha + dt * 2.5);
+        return;
+      }
+      const efDt = Math.min(dt, 0.05);
+      frameCount++;
+      score += Math.floor(efDt * 8);
+      gameSpeed = cheatSlowMo ? 80 + score * 0.4 : 180 + score * 0.8;
+      if (gameSpeed > 620) gameSpeed = 620;
+
+      penguinVY += GRAVITY * efDt;
+      penguinY += penguinVY * efDt;
+      if (penguinY >= groundY - PENGUIN_SIZE/2) {
+        penguinY = groundY - PENGUIN_SIZE/2;
+        penguinVY = 0;
+        penguinGrounded = true;
+        jumpsRemaining = cheatInfJump ? 999 : 2;
+      } else {
+        penguinGrounded = false;
+      }
+
+      penguinX += penguinVX * efDt;
+      penguinVX *= Math.pow(0.08, efDt);
+      if (Math.abs(penguinVX) < 1) penguinVX = 0;
+      if (!cheatGod && penguinX < DEATH_X) {
+        triggerDeath();
+        return;
+      }
+      if (penguinX > W - PENGUIN_SIZE/2) penguinX = W - PENGUIN_SIZE/2;
+
+      obstacleTimer += efDt;
+      if (obstacleTimer >= nextObstacleDelay) {
+        spawnObstacle();
+        obstacleTimer = 0;
+        const base = Math.max(0.7, 1.6 - score * 0.003);
+        nextObstacleDelay = base + Math.random() * base * 0.5;
+      }
+
+      const pw = PENGUIN_SIZE - 8, ph = PENGUIN_SIZE - 6;
+      const sw = OBSTACLE_EMOJI_SIZE - 4, sh = OBSTACLE_EMOJI_SIZE - 4;
+
+      for (let i = obstacles.length-1; i >= 0; i--) {
+        const obs = obstacles[i];
+        obs.x -= gameSpeed * efDt;
+        if (!obs.passed && obs.x + obs.width/2 < penguinX - PENGUIN_SIZE/2) {
+          obs.passed = true;
+          score += 12;
+        }
+        if (obs.x < -obs.width - 50) {
+          obstacles.splice(i,1);
+          continue;
+        }
+
+        if (cheatGod) continue;
+
+        let collided = false, topLanding = false;
+        if (rectCollide(penguinX, penguinY, pw, ph, obs.x, obs.y, obs.width, obs.height)) {
+          collided = true;
+          const pBottom = penguinY + ph/2;
+          const oTop = obs.y - obs.height/2;
+          const overlapBottom = pBottom - oTop;
+          if (overlapBottom > 0 && overlapBottom < 18 && penguinVY >= 0) {
+            penguinY = oTop - ph/2;
+            penguinVY = 0;
+            penguinGrounded = true;
+            jumpsRemaining = cheatInfJump ? 999 : 2;
+            topLanding = true;
+          }
+        }
+        if (!topLanding) {
+          const stepX = obs.x + obs.stepOffsetX;
+          const stepY = obs.y - obs.stepOffsetY;
+          if (rectCollide(penguinX, penguinY, pw, ph, stepX, stepY, sw, sh)) {
+            collided = true;
+            const pBottom = penguinY + ph/2;
+            const oTop = stepY - sh/2;
+            const overlapBottom = pBottom - oTop;
+            if (overlapBottom > 0 && overlapBottom < 18 && penguinVY >= 0) {
+              penguinY = oTop - ph/2;
+              penguinVY = 0;
+              penguinGrounded = true;
+              jumpsRemaining = cheatInfJump ? 999 : 2;
+              topLanding = true;
+            }
+          }
+        }
+        if (collided && !topLanding) {
+          penguinVX = Math.min(penguinVX, PUSH_SPEED);
+          penguinX -= 1.5;
+        }
+      }
+
+      for (let c of clouds) {
+        c.x -= c.speed * efDt * (gameSpeed / 180);
+        if (c.x < -60) { c.x = W + 45; c.y = 28 + Math.random() * 150; }
+      }
+      for (let m of mountains) {
+        m.x -= 50 * efDt * (gameSpeed / 180);
+        if (m.x < -45) { m.x = W + 35 + Math.random() * 40; m.y = groundY - 20 - Math.random() * 14; m.size = 28 + Math.random() * 24; }
+      }
+    }
+
+    function triggerDeath() {
+      gameOver = true;
+      deathMenuAlpha = 0;
+      penguinVY = -350;
+      penguinGrounded = false;
+    }
+
+    function jump() {
+      const now = performance.now() / 1000;
+      if (now - lastJumpTime < JUMP_COOLDOWN) return;
+      if (gameOver) {
+        initGame();
+        resize();
+        lastJumpTime = now;
+        return;
+      }
+      if (!gameStarted) {
+        initGame();
+        resize();
+        const jumpVel = cheatSuperJump ? -780 : JUMP_VELOCITY;
+        penguinVY = jumpVel;
+        penguinGrounded = false;
+        jumpsRemaining = cheatInfJump ? 999 : 1;
+        lastJumpTime = now;
+        return;
+      }
+      if (jumpsRemaining > 0 || cheatInfJump) {
+        const jumpVel = cheatSuperJump ? -780 : JUMP_VELOCITY;
+        penguinVY = jumpVel;
+        penguinGrounded = false;
+        if (!cheatInfJump) jumpsRemaining--;
+        lastJumpTime = now;
+      }
+    }
+
+    function toggleCheat(id, state) {
+      const btn = document.getElementById(id);
+      if (state) btn.classList.add('active');
+      else btn.classList.remove('active');
+    }
+
+    function updateCheatButtons() {
+      toggleCheat('btn-god', cheatGod);
+      toggleCheat('btn-superjump', cheatSuperJump);
+      toggleCheat('btn-slowmo', cheatSlowMo);
+      toggleCheat('btn-infjump', cheatInfJump);
+    }
+
+    function showCheatPanel() {
+      cheatPanel.style.display = 'flex';
+      updateCheatButtons();
+    }
+
+    function hideCheatPanel() {
+      cheatPanel.style.display = 'none';
+    }
+
+    function handleSwipeEnd() {
+      if (swipeSequence.length >= 4) {
+        const last4 = swipeSequence.slice(-4).join(',');
+        if (last4 === 'up,up,down,down') {
+          if (cheatPanel.style.display === 'flex') {
+            hideCheatPanel();
+          } else {
+            showCheatPanel();
+          }
+          swipeSequence = [];
+        }
+        if (swipeSequence.length > 6) swipeSequence = swipeSequence.slice(-6);
+      }
+    }
+
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+    }, {passive: false});
+
+    canvas.addEventListener('touchend', e => {
+      e.preventDefault();
+      if (!touchStartX || !touchStartY) return;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - touchStartX;
+      const dy = touch.clientY - touchStartY;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+
+      if (absDx < 20 && absDy < 20) {
+        jump();
+      } else if (absDy > 30 && absDy > absDx) {
+        const direction = dy < 0 ? 'up' : 'down';
+        swipeSequence.push(direction);
+        if (swipeSequence.length > 10) swipeSequence = swipeSequence.slice(-10);
+        handleSwipeEnd();
+      }
+      touchStartX = 0;
+      touchStartY = 0;
+    });
+
+    canvas.addEventListener('mousedown', e => {
+      e.preventDefault();
+      jump();
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp') {
+        e.preventDefault();
+        jump();
+      }
+    });
+
+    window.addEventListener('resize', resize);
+
+    document.getElementById('btn-god').addEventListener('click', () => {
+      cheatGod = !cheatGod;
+      updateCheatButtons();
+    });
+    document.getElementById('btn-superjump').addEventListener('click', () => {
+      cheatSuperJump = !cheatSuperJump;
+      updateCheatButtons();
+    });
+    document.getElementById('btn-slowmo').addEventListener('click', () => {
+      cheatSlowMo = !cheatSlowMo;
+      if (gameStarted && !gameOver) {
+        gameSpeed = cheatSlowMo ? 80 : 180;
+      }
+      updateCheatButtons();
+    });
+    document.getElementById('btn-infjump').addEventListener('click', () => {
+      cheatInfJump = !cheatInfJump;
+      if (cheatInfJump) jumpsRemaining = 999;
+      else jumpsRemaining = penguinGrounded ? 2 : jumpsRemaining;
+      updateCheatButtons();
+    });
+    document.getElementById('cheat-close').addEventListener('click', hideCheatPanel);
+
+    resize();
+    penguinX = W/2;
+    penguinY = groundY - PENGUIN_SIZE/2;
+    penguinVY = 0;
+    penguinVX = 0;
+    penguinGrounded = true;
+    jumpsRemaining = 2;
+    gameStarted = false;
+    gameOver = false;
+    deathMenuAlpha = 0;
+    score = 0;
+    gameSpeed = 180;
+    obstacles = [];
+    clouds = [];
+    mountains = [];
+    lastJumpTime = -Infinity;
+    for (let i=0;i<6;i++) clouds.push({x:Math.random()*W,y:28+Math.random()*150,speed:40+Math.random()*60,size:24+Math.random()*22});
+    for (let i=0;i<8;i++) mountains.push({x:i*55+Math.random()*22,y:groundY-20-Math.random()*14,size:28+Math.random()*24});
+    let lastTimestamp = performance.now();
+
+    function drawEmoji(text, x, y, size) {
+      ctx.font = `${Math.floor(size)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","EmojiOne Color",sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x, y);
+    }
+
+    function drawPixelNumber(num, cx, cy, unit=5, color='#ffffff') {
+      const str = Math.floor(num).toString();
+      const totalWidth = str.length * (5 * unit + 2) - 2;
+      let sx = cx - totalWidth/2;
+      for (let ch of str) {
+        const pattern = digitPatterns[ch];
+        if (!pattern) { sx += 5*unit+2; continue; }
+        for (let row=0; row<7; row++) {
+          for (let col=0; col<5; col++) {
+            if (pattern[row][col]) {
+              ctx.fillStyle = color;
+              ctx.fillRect(sx + col*unit, cy - 3*unit + row*unit, unit, unit);
+            }
+          }
+        }
+        sx += 5*unit + 2;
+      }
+    }
+
+    function drawPixelBorderRect(x, y, w, h, color='#ffffff', thickness=3) {
+      ctx.fillStyle = color;
+      for (let i=0; i<thickness; i++) {
+        ctx.fillRect(x+i, y+i, w-2*i, 1);
+        ctx.fillRect(x+i, y+h-1-i, w-2*i, 1);
+        ctx.fillRect(x+i, y+i, 1, h-2*i);
+        ctx.fillRect(x+w-1-i, y+i, 1, h-2*i);
+      }
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, W, H);
+      for (let i=0; i<groundY; i+=12) {
+        ctx.fillStyle = i%24===0 ? '#6bb5e0' : '#7fc8f0';
+        ctx.fillRect(0, i, W, 12);
+      }
+      for (let m of mountains) {
+        drawEmoji('🏔️', m.x, m.y, m.size);
+      }
+      for (let c of clouds) {
+        drawEmoji('☁️', c.x, c.y, c.size);
+      }
+      for (let row=0; row<Math.ceil((H-groundY)/BLOCK_SIZE)+1; row++) {
+        const yPos = groundY + row*BLOCK_SIZE + BLOCK_SIZE/2;
+        const emoji = row === 0 ? '🟩' : '🟫';
+        for (let col=0; col<Math.ceil(W/BLOCK_SIZE)+1; col++) {
+          const xPos = col*BLOCK_SIZE + BLOCK_SIZE/2;
+          if (xPos - BLOCK_SIZE/2 > W+5) continue;
+          drawEmoji(emoji, xPos, yPos, BLOCK_SIZE);
+        }
+      }
+      for (let obs of obstacles) {
+        const startX = obs.x - obs.width/2;
+        for (let i=0; i<obs.count; i++) {
+          const ex = startX + i*(OBSTACLE_EMOJI_SIZE+OBSTACLE_GAP) + OBSTACLE_EMOJI_SIZE/2;
+          drawEmoji(obs.emoji, ex, obs.y, OBSTACLE_EMOJI_SIZE);
+        }
+        const stepX = obs.x + obs.stepOffsetX;
+        const stepY = obs.y - obs.stepOffsetY;
+        drawEmoji(obs.emoji, stepX, stepY, OBSTACLE_EMOJI_SIZE);
+      }
+      const bob = penguinGrounded ? Math.sin(frameCount*0.1)*2 : 0;
+      const scared = penguinVX < -50;
+      const emoji = scared ? '😱' : getPenguinEmoji();
+      // 企鹅固定朝左绘制
+      ctx.save();
+      ctx.translate(penguinX, penguinY + bob);
+      ctx.scale(-1, 1);
+      drawEmoji(emoji, 0, 0, PENGUIN_SIZE);
+      ctx.restore();
+
+      const scoreY = 36;
+      ctx.fillStyle = '#0a0a1a';
+      ctx.fillRect(W/2-60, scoreY-18, 120, 42);
+      drawPixelBorderRect(W/2-60, scoreY-18, 120, 42, '#f0e68c', 2);
+      drawEmoji('⭐', W/2-42, scoreY, 20);
+      drawPixelNumber(score, W/2+10, scoreY+2, 4, '#ffd966');
+      if (cheatGod) {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px "Courier New", monospace';
+        ctx.fillText('🛡️无敌', W-50, scoreY+6);
+      }
+      if (gameOver && deathMenuAlpha>0) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0,0,W,H);
+        const mx = W/2, my = H/2-10;
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(mx-135, my-110, 270, 230);
+        drawPixelBorderRect(mx-135, my-110, 270, 230, '#ffffff', 3);
+        drawEmoji('💀', mx, my-60, 46);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 20px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', mx, my-14);
+        drawEmoji('🏆', mx-44, my+24, 26);
+        drawPixelNumber(score, mx+12, my+28, 5, '#ffd700');
+        const btnX = mx-70, btnY = my+64, btnW=140, btnH=46;
+        ctx.fillStyle = '#2a2a4a';
+        ctx.fillRect(btnX, btnY, btnW, btnH);
+        drawPixelBorderRect(btnX, btnY, btnW, btnH, '#fff', 2);
+        drawEmoji('🔄', btnX+32, btnY+btnH/2, 28);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 18px "Courier New", monospace';
+        ctx.fillText('RESTART', btnX+70, btnY+btnH/2+1);
+      }
+      ctx.textAlign = 'start';
+    }
+
+    function gameLoop(ts) {
+      if (!lastTimestamp) lastTimestamp = ts;
+      let dt = (ts - lastTimestamp) / 1000;
+      if (dt > 0.1) dt = 0.1;
+      lastTimestamp = ts;
+      update(dt);
+      ctx.save();
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      render();
+      ctx.restore();
+      requestAnimationFrame(gameLoop);
+    }
+
+    requestAnimationFrame(gameLoop);
+  })();
+</script>
+</body>
+</html>
